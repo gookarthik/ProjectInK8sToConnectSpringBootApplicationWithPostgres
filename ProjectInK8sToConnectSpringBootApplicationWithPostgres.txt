@@ -1,0 +1,177 @@
+Source::   https://spring.io/guides/gs/spring-boot-kubernetes/
+
+$ sudo su
+$ apt-get update
+$ sudo apt-get install openjdk-8-jdk
+$ mkdir karthik
+$ cd karthik
+$ curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+$ chmod +x ./kubectl
+$ sudo mv ./kubectl /usr/local/bin/kubectl
+$ sudo apt-get update && \
+    sudo apt-get install docker.io -y
+$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 && chmod +x minikube && sudo mv minikube /usr/local/bin/
+$ minikube version    
+$ minikube start --vm-driver=none
+$ kubectl cluster-info
+$ kubectl get all
+$ curl https://start.spring.io/starter.tgz -d dependencies=webflux,actuator | tar -xzvf -
+$ ./mvnw install
+$ ls -l target/*.jar
+$ java -jar target/*.jar
+
+---------------------------------------------------------------------
+Open Another terminal
+--------------------
+
+$ sudo apt  install jq
+$ curl localhost:8080/actuator | jq .
+==========You get this============
+{
+  "_links": {
+    "self": {
+      "href": "http://localhost:8080/actuator",
+      "templated": false
+    },
+    "health-path": {
+      "href": "http://localhost:8080/actuator/health/{*path}",
+      "templated": true
+    },
+    "health": {
+      "href": "http://localhost:8080/actuator/health",
+      "templated": false
+    },
+    "info": {
+      "href": "http://localhost:8080/actuator/info",
+      "templated": false
+    }
+  }
+}
+--------------------------------------------------------------------------------------------------------------
+
+Continue with first terminal............
+
+Close running in port 8080 by pressing Ctrl+C
+
+$ vi Dockerfile
+---------------------------------------------------------------------------
+FROM openjdk:8-jdk-alpine AS builder
+WORKDIR target/dependency
+ARG APPJAR=target/*.jar
+COPY ${APPJAR} app.jar
+RUN jar -xf ./app.jar
+
+FROM openjdk:8-jre-alpine
+VOLUME /tmp
+ARG DEPENDENCY=target/dependency
+COPY --from=builder ${DEPENDENCY}/BOOT-INF/lib /app/lib
+COPY --from=builder ${DEPENDENCY}/META-INF /app/META-INF
+COPY --from=builder ${DEPENDENCY}/BOOT-INF/classes /app
+ENTRYPOINT ["java","-cp","app:app/lib/*","com.example.demo.DemoApplication"]
+-----------------------------------------------------------------------------
+
+
+$ docker build -t springguides/demo .
+$ docker run -p 8080:8080 springguides/demo
+
+Check health in another terminal
+$ curl localhost:8080/actuator/health
+
+Finish off by killing the container.  Ctrl+C
+
+$ docker push springguides/demo
+
+$ sudo kubectl run demo2 --image=springguides/demo --port=8080
+$ sudo kubectl get deployments
+$ sudo kubectl get pods
+$ sudo kubectl expose deployment/demo2 --type="NodePort" --port 8080
+$ kubectl describe services/demo2
+
+Name:                     demo2
+Namespace:                default
+Labels:                   run=demo2
+Annotations:              <none>
+Selector:                 run=demo2
+Type:                     NodePort
+IP:                       10.96.58.21
+Port:                     <unset>  8080/TCP
+TargetPort:               8080/TCP
+NodePort:                 <unset>  30924/TCP
+Endpoints:                172.17.0.4:8080
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+
+$ curl http://15.206.167.218:30924/
+
+----------------------------------------------------------------------------------------------------------
+
+Deploying Postgres in SpringBoot Applications in K8s
+-----------------------------------------------------
+
+$ kubectl run postgres --image=postgres --replicas=1
+$ sudo kubectl get pods
+$ sudo kubectl expose deployment/postgres --type="NodePort" --port 5432
+$ kubectl describe svc postgres
+$ vi pod.yaml
+--------------------------------------------------
+apiVersion: v1
+kind: Pod
+metadata:
+  name: some-postgres
+  labels:
+    name: some-postgres
+spec:
+  containers:
+    - image: launcher.gcr.io/google/postgresql9
+      name: postgres
+      env:
+        - name: "POSTGRES_PASSWORD"
+          value: "example-password"
+---------------------------------------------------
+$ kubectl create -f pod.yaml
+$ kubectl expose pod some-postgres --name some-postgres-5432 \
+  --type LoadBalancer --port 5432 --protocol TCP
+$ kubectl describe svc some-postgres
+
+Name:                     some-postgres-5432
+Namespace:                default
+Labels:                   name=some-postgres
+Annotations:              <none>
+Selector:                 name=some-postgres
+Type:                     LoadBalancer
+IP:                       10.96.61.52
+Port:                     <unset>  5432/TCP
+TargetPort:               5432/TCP
+NodePort:                 <unset>  30662/TCP
+Endpoints:                <none>
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+
+$ kubectl run demo3 --image=springguides/demo --replicas=2 --port=8080 --env="SPRING_PROFILES_ACTIVE=slalom-ci" --env="SPRING_DATASOURCE_URL=jdbc:postgresql://10.96.61.52:5432/some-postgres"
+
+$ kubectl get po
+$ sudo kubectl expose deployment/demo3 --type="LoadBalancer" --port 8080
+$ kubectl describe services/demo3
+
+Name:                     demo3
+Namespace:                default
+Labels:                   run=demo3
+Annotations:              <none>
+Selector:                 run=demo3
+Type:                     LoadBalancer
+IP:                       10.96.9.169
+Port:                     <unset>  8080/TCP
+TargetPort:               8080/TCP
+NodePort:                 <unset>  31272/TCP
+Endpoints:                172.17.0.7:8080,172.17.0.8:8080
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+$ kubectl exec -it some-postgres -- psql --username postgres
+$ \q
+$ curl http://15.206.167.218:31272/
